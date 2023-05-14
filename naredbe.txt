@@ -1,0 +1,6 @@
+./bin/clang -emit-llvm -S -fno-discard-value-names -Xclang -disable-O0-optnone -o ../test.ll ../test.c 
+./bin/opt -mem2reg -S -o ../testmem2reg.ll -enable-new-pm=0 ../test.ll 
+./bin/opt -mem2reg -S -o ../testmem2reg.ll -enable-new-pm=0 ../test.ll 
+./bin/opt -load lib/LLVMOurMem2RegPass.so -ourmem2reg -S -debug -o ../testmem2reg.ll -enable-new-pm=0 ../test.ll 
+
+

@@ -4,7 +4,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/CFG.h"
-#include <map>
+#include <unordered_map>
 
 using namespace llvm;
 
@@ -12,12 +12,12 @@ class DomTree {
     private:
        
         Function *currentFunction;
-        void DomFrontierDFS(DomTreeNode *, std::map<BasicBlock *, std::vector<BasicBlock *>>&);
+        void DomFrontierDFS(DomTreeNode *, std::unordered_map<BasicBlock *, std::vector<BasicBlock *>>&);
     public:
         DominatorTree tree;
         DomTree(Function &);
         void viewGraph();
-        std::map<BasicBlock *, std::vector<BasicBlock *>> GetDominanceFrontiers();
+        std::unordered_map<BasicBlock *, std::vector<BasicBlock *>> GetDominanceFrontiers();
 };
 
 #endif

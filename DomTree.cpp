@@ -5,7 +5,7 @@ DomTree::DomTree(Function &F){
     currentFunction = &F;
 }
 
-void DomTree::DomFrontierDFS(DomTreeNode* currentNode, std::map<BasicBlock *, std::vector<BasicBlock *>>& DomFrontier){
+void DomTree::DomFrontierDFS(DomTreeNode* currentNode, std::unordered_map<BasicBlock *, std::vector<BasicBlock *>>& DomFrontier){
   for(DomTreeNode *DomTreeChild: currentNode->children())
     DomFrontierDFS(DomTreeChild, DomFrontier);
 
@@ -27,8 +27,8 @@ void DomTree::DomFrontierDFS(DomTreeNode* currentNode, std::map<BasicBlock *, st
   }
 }
 
-std::map<BasicBlock *, std::vector<BasicBlock *>>  DomTree::GetDominanceFrontiers(){
-  std::map<BasicBlock *, std::vector<BasicBlock *> > DomFrontier;
+std::unordered_map<BasicBlock *, std::vector<BasicBlock *>>  DomTree::GetDominanceFrontiers(){
+  std::unordered_map<BasicBlock *, std::vector<BasicBlock *> > DomFrontier;
   DomTreeNode* rootNode = tree.getRootNode();
   DomFrontierDFS(rootNode, DomFrontier);
   return DomFrontier;

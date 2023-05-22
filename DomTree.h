@@ -10,11 +10,10 @@ using namespace llvm;
 
 class DomTree {
     private:
-        DominatorTree tree;
         Function *currentFunction;
         void DomFrontierDFS(DomTreeNode *, std::unordered_map<BasicBlock *, std::vector<BasicBlock *>>&);
     public:
-        
+        DominatorTree tree;
         DomTree(Function &);
         void viewGraph();
         std::unordered_map<BasicBlock *, std::vector<BasicBlock *>> GetDominanceFrontiers();

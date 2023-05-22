@@ -106,11 +106,30 @@ namespace {
 
                     Instruction *ins = &*InstructionIter;
                     if(AllocaInst *allocaIns = dyn_cast<AllocaInst>(ins)){
+                        
+                        //1. if the alloca variable is used by any instruction that is not either load or store do not do anything with it
+                        bool shouldBeSSA = true;
+                        for(Value* varUse: allocaIns->users()){
+                            
+                            if(! (isa<LoadInst>(varUse) || isa<StoreInst>(varUse))){
+                                shouldBeSSA = false;
+                                break;
+                            }
+                        }
+                        if(!shouldBeSSA)
+                            continue;
+			            
+                        //2. add it to the list of variables
                         VarType[allocaIns] = allocaIns->getAllocatedType();
                         allVariables.insert(allocaIns);
-                    }else if(StoreInst *storeIns = dyn_cast<StoreInst>(ins)){
-                        Value* targetVariable = storeIns->getPointerOperand();
-                        blocksWithStores[targetVariable].insert(&*BasicBlockIter);
+
+                        //3. find all the stores to the variable
+                        for(Value* varUse: allocaIns->users()){
+                            if(auto storeIns = dyn_cast<StoreInst>(varUse)){
+                                blocksWithStores[ins].insert(storeIns->getParent());
+                            }
+                        }
+
                     }
                 }
             }
@@ -191,6 +210,11 @@ namespace {
 
             for(Instruction* Inst:ToDelete){
                 Inst->eraseFromParent();
+            }
+            for(auto AllocaVal: allVariables){
+                if(Instruction* AllocaInst = dyn_cast<Instruction> (AllocaVal)){
+                    AllocaInst->eraseFromParent();
+                }
             }
 
             return true;

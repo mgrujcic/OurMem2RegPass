@@ -77,12 +77,13 @@ namespace {
         }
 
         //for debugging purposes
-        void printIR(Function &F){
-            for(auto BB = F.begin();BB!=F.end();BB++) {
-                errs()<<BB->getName()<<":\n";
-                for (auto Instr = BB->begin();Instr != BB->end();Instr++) {
-                    Instr->print(errs());
-                    errs() << "\n";
+        void printIR(const Function &F){
+            for(auto &BB: F) {
+                errs() << BB.getName() << ":\n";
+                for (auto &Instr: BB) {
+                    errs() <<'\t';
+                    Instr.print(errs());
+                    errs() << '\n';
                 }
             }
         }
@@ -135,57 +136,51 @@ namespace {
             }
         }
 
+        void renameVars(BasicBlock *BB, const std::unordered_set<Value *> &allVariables, std::unordered_map<PHINode *, Value*> &PhiToVariableMapping, Function &F){
+            for(Instruction &InstRef : *BB){
+                Instruction *Inst = &InstRef;
+                if(isa<StoreInst>(Inst) && allVariables.find(Inst->getOperand(1)) != allVariables.end()){
+                    Value *storeSrc = Inst->getOperand(0);
+                    Value *storeDest = Inst->getOperand(1);
+                    VarUseStack[storeDest].push(storeSrc);
+                }
+                else if(isa<LoadInst>(Inst) && allVariables.find(Inst->getOperand(0)) != allVariables.end()){
+                    Value *loadVal = Inst->getOperand(0);
+                    Inst->replaceAllUsesWith(VarUseStack[loadVal].top());
+                }
+                else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
+                    Value *val = PhiToVariableMapping[phi];
+                    VarUseStack[val].push(Inst);
+                }
+            }
 
-        void renameVars(BasicBlock* BB, std::unordered_set<Value *> allVariables, std::unordered_map<PHINode *, Value*> PhiToVariableMapping, Function &F){
-            for(auto InstructionIter = BB->begin(); InstructionIter != BB->end(); InstructionIter++){
-                Instruction* Inst = &*InstructionIter;
-                if(isa<StoreInst>(Inst)){
-                    if(allVariables.find(Inst->getOperand(1))!=allVariables.end()) {
-                        VarUseStack[Inst->getOperand(1)].push(Inst->getOperand(0));
-                    }
-                }
-                else if(isa<LoadInst>(Inst)){
-                    if(allVariables.find(Inst->getOperand(0))!=allVariables.end()){
-                        Inst->replaceAllUsesWith(VarUseStack[Inst->getOperand(0)].top());
-                    }
-                }
-                else if(isa<PHINode>(Inst)){
-                    PHINode *phi = dyn_cast<PHINode>(Inst);
-                    Value* val = PhiToVariableMapping[phi];
-                    if(val){
-                        VarUseStack[val].push(Inst);
+            for(auto Successor: successors(BB)){
+                for(Instruction &InstRef: *Successor){
+                    if(PHINode *phi = dyn_cast<PHINode>(&InstRef)){
+                        Value *val = PhiToVariableMapping[phi];
+                        phi->addIncoming(VarUseStack[val].top(), BB);
                     }
                 }
             }
-            for(succ_iterator i = succ_begin(BB), e = succ_end(BB); i!=e; i++){
-                for(Instruction &InstRef: **i){
-                    PHINode *phi;
-                    if(isa<PHINode>(&InstRef)){
-                        phi= dyn_cast<PHINode>(&InstRef);
-                        if(PhiToVariableMapping[phi]) {
-                            phi->addIncoming(VarUseStack[PhiToVariableMapping[phi]].top(), BB);
-                        }
-                    }
-                }
-            }
-            DomTree domTree = DomTree(F);
+
+            DomTree domTree(F);
             for(auto *Child: domTree.tree.getNode(BB)->children()){
                 renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F);
             }
 
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
-                if(isa<StoreInst>(Inst) && allVariables.find(Inst->getOperand(1))!=allVariables.end()){
-                    VarUseStack[Inst->getOperand(1)].pop();
+                if(isa<StoreInst>(Inst) && allVariables.find(Inst->getOperand(1)) != allVariables.end()){
+                    Value *storeDest = Inst->getOperand(1);
+                    VarUseStack[storeDest].pop();
+                    ToDelete.push_back(Inst);
+                }
+                else if(isa<LoadInst>(Inst) && allVariables.find(Inst->getOperand(0)) != allVariables.end()){
                     ToDelete.push_back(Inst);
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
-                    if(PhiToVariableMapping[phi]){
-                        VarUseStack[PhiToVariableMapping[phi]].pop();
-                    }
-                }
-                else if(isa<LoadInst>(Inst) && allVariables.find(Inst->getOperand(0))!=allVariables.end()){
-                    ToDelete.push_back(Inst);
+                    Value *val = PhiToVariableMapping[phi];
+                    VarUseStack[val].pop();
                 }
             }
         }
@@ -211,6 +206,7 @@ namespace {
             for(Instruction* Inst:ToDelete){
                 Inst->eraseFromParent();
             }
+
             for(auto AllocaVal: allVariables){
                 if(Instruction* AllocaInst = dyn_cast<Instruction> (AllocaVal)){
                     AllocaInst->eraseFromParent();

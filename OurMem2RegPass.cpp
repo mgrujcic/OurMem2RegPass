@@ -2,6 +2,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Constant.h"
 #include <unordered_set>
 #include <stack>
 #include "DomTree.h"
@@ -143,7 +144,6 @@ namespace {
                         Function &F, 
                         DomTree &domTree)
         {
-            errs() << BB->getName() << "\n";
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
                 //unchecked dyn cast! should be allocainst, even if the cast fails it just would not find it in the set, so the condition is false
@@ -169,11 +169,13 @@ namespace {
                 for(Instruction &InstRef: *Successor){
                     if(PHINode *phi = dyn_cast<PHINode>(&InstRef)){
                         //if the phi instruction was not added by this pass skip it
-                        if(OurPhiNodes.find(phi) ==OurPhiNodes.end())
+                        if(OurPhiNodes.find(phi) == OurPhiNodes.end())
                             continue;
 
-                        Value *val = PhiToVariableMapping[phi];
-                        phi->addIncoming(VarUseStack[val].top(), BB);
+                        AllocaInst *val = dyn_cast<AllocaInst>(PhiToVariableMapping[phi]);
+                        Value *valForPhi = VarUseStack[val].empty()?Constant::getNullValue(val->getAllocatedType()):
+                                                                    VarUseStack[val].top();
+                        phi->addIncoming(valForPhi, BB);
                     }
                 }
             }
@@ -195,7 +197,7 @@ namespace {
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
                     //if the phi instruction was not added by this pass skip it
-                     if(OurPhiNodes.find(phi) ==OurPhiNodes.end())
+                     if(OurPhiNodes.find(phi) == OurPhiNodes.end())
                         continue;
                     Value *val = PhiToVariableMapping[phi];
                     VarUseStack[val].pop();
@@ -211,9 +213,6 @@ namespace {
 
             DomTree domTree = DomTree(F);
             auto dominanceFrontier = domTree.GetDominanceFrontiers();
-
-            domTree.viewGraph();
-            F.viewCFG();
 
             std::unordered_map<PHINode *, Value*> PhiToVariableMapping;
             InsertPhiInstructions(F, allVariables, blocksWithStores, dominanceFrontier, PhiToVariableMapping);

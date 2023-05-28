@@ -19,7 +19,7 @@ void DomTree::DomFrontierDFS(DomTreeNode* currentNode, std::unordered_map<BasicB
   for(DomTreeNode *DomTreeChild: currentNode->children())
     DomFrontierDFS(DomTreeChild, DomFrontier);
 
-  //initialize the list of nodes in the frontier of the current node to an empty set
+  //initialize the list of nodes in the frontier of the current node to an empty list
   DomFrontier[currentNode->getBlock()] = std::vector<BasicBlock *>();
   
   //local
@@ -51,4 +51,5 @@ std::unordered_map<BasicBlock *, std::vector<BasicBlock *>>  DomTree::GetDominan
 
 void DomTree::viewGraph(){
   tree.viewGraph();
+  
 }

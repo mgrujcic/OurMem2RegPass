@@ -15,7 +15,6 @@ namespace {
 
         std::unordered_map<Value *, std::stack<Value*>> VarUseStack;
         std::vector<Instruction*> ToDelete;
-        std::unordered_map<Value*, Type*> VarType;
 
         /* InsertPhiInstructions
         Cytron et al. section 5.1
@@ -32,19 +31,20 @@ namespace {
 
         */
         void InsertPhiInstructions(Function &F,
-                                   std::unordered_set<Value *> &allVariables,
-                                   std::unordered_map<Value *, std::unordered_set<BasicBlock *>> &blocksWithStores,
-        std::unordered_map<BasicBlock *, std::vector<BasicBlock *>> &DomFrontiers,
-        std::unordered_map<PHINode *, Value*> &PhiToVariableMapping){
+                                   std::unordered_set<AllocaInst *> &allVariables,
+                                   std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> &blocksWithStores,
+                                   std::unordered_map<BasicBlock *, std::vector<BasicBlock *>> &DomFrontiers,
+                                   std::unordered_map<PHINode *, Value*> &PhiToVariableMapping)
+        {
             int iterCount = 0;
             std::unordered_map <BasicBlock*, int> HasAlready, Work;
-            for(auto BBIterator = F.begin(); BBIterator != F.end(); BBIterator++) {
-                HasAlready[&*BBIterator] = 0;
-                Work[&*BBIterator] = 0;
+            for(auto &BB: F) {
+                HasAlready[&BB] = 0;
+                Work[&BB] = 0;
             }
 
             std::unordered_set<BasicBlock *> Worklist;
-            for(Value* variableValue: allVariables){
+            for(AllocaInst* variableValue: allVariables){
                 iterCount++;
                 for(auto BB: blocksWithStores[variableValue]){
                     Work[BB] = iterCount;
@@ -57,14 +57,14 @@ namespace {
 
                     for(auto DFBlock: DomFrontiers[currentBlock]){
                         if(HasAlready[DFBlock] < iterCount){
-                            /// ADD THE PHI INSTRUCTION ///
-                            auto currentPHINode = PHINode::Create(VarType[variableValue],
+                            //insert the phi instruction
+                            errs() << "Should add a phi instruction to block " << DFBlock->getName() << " for variable " << variableValue->getName() << 
+                                " current block " << currentBlock->getName() << "\n";
+                            auto currentPHINode = PHINode::Create(variableValue->getAllocatedType(),
                                                                   pred_size(DFBlock),
                                                                   variableValue->getName() + "_in_" + DFBlock->getName(),
                                                                   &DFBlock->front());
                             PhiToVariableMapping[currentPHINode] = variableValue;
-                            ///////////////////////////////
-                            errs() << "Should add a phi instruction to block " << DFBlock->getName() << " for variable " << variableValue->getName() << "\n";
                             HasAlready[DFBlock] = iterCount;
                             if(Work[DFBlock] < iterCount){
                                 Work[DFBlock] = iterCount;
@@ -98,14 +98,14 @@ namespace {
         blocksWithStores - for each variable lists all of the basic blocks where there is a store instruction to it
         */
         void getVariables(Function &F,
-                          std::unordered_set<Value *> &allVariables,
-                          std::unordered_map<Value *,
-                                  std::unordered_set<BasicBlock *>> &blocksWithStores){
+                          std::unordered_set<AllocaInst *> &allVariables,
+                          std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> &blocksWithStores)
+        {
 
-            for(auto BasicBlockIter = F.begin(); BasicBlockIter != F.end(); BasicBlockIter++){
-                for(auto InstructionIter = BasicBlockIter->begin(); InstructionIter != BasicBlockIter->end(); InstructionIter++){
+            for(auto &BB: F){
+                for(auto &Ins: BB){
 
-                    Instruction *ins = &*InstructionIter;
+                    Instruction *ins = &Ins;
                     if(AllocaInst *allocaIns = dyn_cast<AllocaInst>(ins)){
                         
                         //1. if the alloca variable is used by any instruction that is not either load or store do not do anything with it
@@ -121,13 +121,12 @@ namespace {
                             continue;
 			            
                         //2. add it to the list of variables
-                        VarType[allocaIns] = allocaIns->getAllocatedType();
                         allVariables.insert(allocaIns);
 
                         //3. find all the stores to the variable
                         for(Value* varUse: allocaIns->users()){
                             if(auto storeIns = dyn_cast<StoreInst>(varUse)){
-                                blocksWithStores[ins].insert(storeIns->getParent());
+                                blocksWithStores[allocaIns].insert(storeIns->getParent());
                             }
                         }
 
@@ -136,15 +135,21 @@ namespace {
             }
         }
 
-        void renameVars(BasicBlock *BB, const std::unordered_set<Value *> &allVariables, std::unordered_map<PHINode *, Value*> &PhiToVariableMapping, Function &F){
+        void renameVars(BasicBlock *BB, 
+                        const std::unordered_set<AllocaInst *> &allVariables, 
+                        std::unordered_map<PHINode *, Value*> &PhiToVariableMapping, 
+                        Function &F, 
+                        DomTree &domTree)
+        {
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
-                if(isa<StoreInst>(Inst) && allVariables.find(Inst->getOperand(1)) != allVariables.end()){
+                //unchecked dyn cast! should be allocainst, even if the cast fails it just would not find it in the set, so the condition is false
+                if(isa<StoreInst>(Inst) && allVariables.find(dyn_cast<AllocaInst>(Inst->getOperand(1))) != allVariables.end()){//unchecked dyn
                     Value *storeSrc = Inst->getOperand(0);
                     Value *storeDest = Inst->getOperand(1);
                     VarUseStack[storeDest].push(storeSrc);
                 }
-                else if(isa<LoadInst>(Inst) && allVariables.find(Inst->getOperand(0)) != allVariables.end()){
+                else if(isa<LoadInst>(Inst) && allVariables.find(dyn_cast<AllocaInst>(Inst->getOperand(0))) != allVariables.end()){//unchecked dyn
                     Value *loadVal = Inst->getOperand(0);
                     Inst->replaceAllUsesWith(VarUseStack[loadVal].top());
                 }
@@ -163,19 +168,19 @@ namespace {
                 }
             }
 
-            DomTree domTree(F);
+            
             for(auto *Child: domTree.tree.getNode(BB)->children()){
-                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F);
+                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F, domTree);
             }
 
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
-                if(isa<StoreInst>(Inst) && allVariables.find(Inst->getOperand(1)) != allVariables.end()){
+                if(isa<StoreInst>(Inst) && allVariables.find(dyn_cast<AllocaInst>(Inst->getOperand(1))) != allVariables.end()){//unchecked dyn
                     Value *storeDest = Inst->getOperand(1);
                     VarUseStack[storeDest].pop();
                     ToDelete.push_back(Inst);
                 }
-                else if(isa<LoadInst>(Inst) && allVariables.find(Inst->getOperand(0)) != allVariables.end()){
+                else if(isa<LoadInst>(Inst) && allVariables.find(dyn_cast<AllocaInst>(Inst->getOperand(0))) != allVariables.end()){//unchecked dyn
                     ToDelete.push_back(Inst);
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
@@ -186,13 +191,16 @@ namespace {
         }
 
         bool runOnFunction(Function &F) override {
-            std::unordered_set<Value *> allVariables;
-            std::unordered_map<Value *, std::unordered_set<BasicBlock *>> blocksWithStores;
+            std::unordered_set<AllocaInst *> allVariables;
+            std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> blocksWithStores;
 
             getVariables(F, allVariables, blocksWithStores);
 
             DomTree domTree = DomTree(F);
             auto dominanceFrontier = domTree.GetDominanceFrontiers();
+
+            domTree.viewGraph();
+            F.viewCFG();
 
             std::unordered_map<PHINode *, Value*> PhiToVariableMapping;
             InsertPhiInstructions(F, allVariables, blocksWithStores, dominanceFrontier, PhiToVariableMapping);
@@ -201,7 +209,7 @@ namespace {
                 VarUseStack[v] = std::stack<Value*>();
             }
 
-            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, F);
+            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, F, domTree);
 
             for(Instruction* Inst:ToDelete){
                 Inst->eraseFromParent();

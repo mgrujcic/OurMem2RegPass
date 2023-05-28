@@ -15,6 +15,7 @@ namespace {
 
         std::unordered_map<Value *, std::stack<Value*>> VarUseStack;
         std::vector<Instruction*> ToDelete;
+        std::unordered_set<PHINode*> OurPhiNodes;
 
         /* InsertPhiInstructions
         Cytron et al. section 5.1
@@ -65,6 +66,7 @@ namespace {
                                                                   variableValue->getName() + "_in_" + DFBlock->getName(),
                                                                   &DFBlock->front());
                             PhiToVariableMapping[currentPHINode] = variableValue;
+                            OurPhiNodes.insert(currentPHINode);
                             HasAlready[DFBlock] = iterCount;
                             if(Work[DFBlock] < iterCount){
                                 Work[DFBlock] = iterCount;
@@ -141,6 +143,7 @@ namespace {
                         Function &F, 
                         DomTree &domTree)
         {
+            errs() << BB->getName() << "\n";
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
                 //unchecked dyn cast! should be allocainst, even if the cast fails it just would not find it in the set, so the condition is false
@@ -154,6 +157,9 @@ namespace {
                     Inst->replaceAllUsesWith(VarUseStack[loadVal].top());
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
+                    //if the phi instruction was not added by this pass skip it
+                    if(OurPhiNodes.find(phi) == OurPhiNodes.end())
+                        continue;
                     Value *val = PhiToVariableMapping[phi];
                     VarUseStack[val].push(Inst);
                 }
@@ -162,6 +168,10 @@ namespace {
             for(auto Successor: successors(BB)){
                 for(Instruction &InstRef: *Successor){
                     if(PHINode *phi = dyn_cast<PHINode>(&InstRef)){
+                        //if the phi instruction was not added by this pass skip it
+                        if(OurPhiNodes.find(phi) ==OurPhiNodes.end())
+                            continue;
+
                         Value *val = PhiToVariableMapping[phi];
                         phi->addIncoming(VarUseStack[val].top(), BB);
                     }
@@ -184,6 +194,9 @@ namespace {
                     ToDelete.push_back(Inst);
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
+                    //if the phi instruction was not added by this pass skip it
+                     if(OurPhiNodes.find(phi) ==OurPhiNodes.end())
+                        continue;
                     Value *val = PhiToVariableMapping[phi];
                     VarUseStack[val].pop();
                 }

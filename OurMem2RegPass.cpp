@@ -15,6 +15,56 @@ namespace {
         OurMem2RegPass() : FunctionPass(ID) {}
 
 
+        
+        /*getVariables
+
+        IN:
+        F - current Function
+
+        OUT:
+        allVariables - all Alloca instructions
+        blocksWithStores - for each variable lists all of the basic blocks where there is a store instruction to it
+        */
+
+        void getVariables(Function &F,
+                          std::unordered_set<AllocaInst *> &allVariables,
+                          std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> &blocksWithStores)
+        {
+
+            for(auto &BB: F){
+                for(auto &Ins: BB){
+
+                    Instruction *ins = &Ins;
+                    if(AllocaInst *allocaIns = dyn_cast<AllocaInst>(ins)){
+                        
+                        //1. if the alloca variable is used by any instruction that is not either load or store do not do anything with it
+                        bool shouldBeSSA = true;
+                        for(Value* varUse: allocaIns->users()){
+                            
+                            if(! (isa<LoadInst>(varUse) || isa<StoreInst>(varUse))){
+                                shouldBeSSA = false;
+                                break;
+                            }
+                        }
+                        if(!shouldBeSSA)
+                            continue;
+			            
+                        //2. add it to the list of variables
+                        allVariables.insert(allocaIns);
+
+                        //3. find all the stores to the variable
+                        for(Value* varUse: allocaIns->users()){
+                            if(auto storeIns = dyn_cast<StoreInst>(varUse)){
+                                blocksWithStores[allocaIns].insert(storeIns->getParent());
+                            }
+                        }
+
+                    }
+                }
+            }
+        }
+
+
         /* InsertPhiInstructions
         Cytron et al. section 5.1
 
@@ -27,7 +77,7 @@ namespace {
 
         OUT:
         PhiToVariableMapping - For each of the phi instructions inserted, for which variable is that phi node used for
-
+        OurPhiNodes - Since Clang can generate phi instructions in some cases, keep track of which of the instructions were created by this pass
         */
         void InsertPhiInstructions(Function &F,
                                    std::unordered_set<AllocaInst *> &allVariables,
@@ -89,52 +139,8 @@ namespace {
             }
         }
 
-        /*getVariables
-
-        IN:
-        F - current Function
-
-        OUT:
-        allVariables - all Alloca instructions
-        blocksWithStores - for each variable lists all of the basic blocks where there is a store instruction to it
-        */
-        void getVariables(Function &F,
-                          std::unordered_set<AllocaInst *> &allVariables,
-                          std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> &blocksWithStores)
-        {
-
-            for(auto &BB: F){
-                for(auto &Ins: BB){
-
-                    Instruction *ins = &Ins;
-                    if(AllocaInst *allocaIns = dyn_cast<AllocaInst>(ins)){
-                        
-                        //1. if the alloca variable is used by any instruction that is not either load or store do not do anything with it
-                        bool shouldBeSSA = true;
-                        for(Value* varUse: allocaIns->users()){
-                            
-                            if(! (isa<LoadInst>(varUse) || isa<StoreInst>(varUse))){
-                                shouldBeSSA = false;
-                                break;
-                            }
-                        }
-                        if(!shouldBeSSA)
-                            continue;
-			            
-                        //2. add it to the list of variables
-                        allVariables.insert(allocaIns);
-
-                        //3. find all the stores to the variable
-                        for(Value* varUse: allocaIns->users()){
-                            if(auto storeIns = dyn_cast<StoreInst>(varUse)){
-                                blocksWithStores[allocaIns].insert(storeIns->getParent());
-                            }
-                        }
-
-                    }
-                }
-            }
-        }
+        
+        
 
         void renameVars(BasicBlock *BB, 
                         const std::unordered_set<AllocaInst *> &allVariables, 
@@ -143,8 +149,7 @@ namespace {
                         DomTree &domTree,
                         std::unordered_map<Value *, std::stack<Value*>> &VarUseStack,
                         std::vector<Instruction*> &ToDelete,
-                        std::unordered_set<PHINode*> &OurPhiNodes
-)
+                        std::unordered_set<PHINode*> &OurPhiNodes)
         {
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;

@@ -14,9 +14,6 @@ namespace {
         static char ID;
         OurMem2RegPass() : FunctionPass(ID) {}
 
-        std::unordered_map<Value *, std::stack<Value*>> VarUseStack;
-        std::vector<Instruction*> ToDelete;
-        std::unordered_set<PHINode*> OurPhiNodes;
 
         /* InsertPhiInstructions
         Cytron et al. section 5.1
@@ -36,7 +33,8 @@ namespace {
                                    std::unordered_set<AllocaInst *> &allVariables,
                                    std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> &blocksWithStores,
                                    std::unordered_map<BasicBlock *, std::vector<BasicBlock *>> &DomFrontiers,
-                                   std::unordered_map<PHINode *, Value*> &PhiToVariableMapping)
+                                   std::unordered_map<PHINode *, Value*> &PhiToVariableMapping,
+                                   std::unordered_set<PHINode*> &OurPhiNodes)
         {
             int iterCount = 0;
             std::unordered_map <BasicBlock*, int> HasAlready, Work;
@@ -142,7 +140,11 @@ namespace {
                         const std::unordered_set<AllocaInst *> &allVariables, 
                         std::unordered_map<PHINode *, Value*> &PhiToVariableMapping, 
                         Function &F, 
-                        DomTree &domTree)
+                        DomTree &domTree,
+                        std::unordered_map<Value *, std::stack<Value*>> &VarUseStack,
+                        std::vector<Instruction*> &ToDelete,
+                        std::unordered_set<PHINode*> &OurPhiNodes
+)
         {
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
@@ -182,7 +184,7 @@ namespace {
 
             
             for(auto *Child: domTree.tree.getNode(BB)->children()){
-                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F, domTree);
+                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F, domTree, VarUseStack, ToDelete, OurPhiNodes);
             }
 
             for(Instruction &InstRef : *BB){
@@ -215,13 +217,18 @@ namespace {
             auto dominanceFrontier = domTree.GetDominanceFrontiers();
 
             std::unordered_map<PHINode *, Value*> PhiToVariableMapping;
-            InsertPhiInstructions(F, allVariables, blocksWithStores, dominanceFrontier, PhiToVariableMapping);
+            std::unordered_set<PHINode*> OurPhiNodes;
 
+            InsertPhiInstructions(F, allVariables, blocksWithStores, dominanceFrontier, PhiToVariableMapping, OurPhiNodes);
+
+            std::unordered_map<Value *, std::stack<Value*>> VarUseStack;
             for(Value* v: allVariables) {
                 VarUseStack[v] = std::stack<Value*>();
             }
+            std::vector<Instruction*> ToDelete;
 
-            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, F, domTree);
+            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, F, domTree, VarUseStack, ToDelete, OurPhiNodes);
+
 
             for(Instruction* Inst:ToDelete){
                 Inst->eraseFromParent();

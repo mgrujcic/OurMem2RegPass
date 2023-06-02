@@ -127,8 +127,14 @@ namespace {
             }
         }
 
-        //for debugging purposes
-        void printIR(const Function &F){
+        /**
+         *
+         * @brief Prints every instruction of function F
+         *
+         * @param[in] F function
+         */
+        void printIR(const Function &F)
+        {
             for(auto &BB: F) {
                 errs() << BB.getName() << ":\n";
                 for (auto &Instr: BB) {
@@ -139,17 +145,24 @@ namespace {
             }
         }
 
-        
-        
-
+        /**
+         *
+         * @param[in] BB basic block that is currently being iterated
+         * @param[in] allVariables all alloca instructions
+         * @param[in] PhiToVariableMapping maps phi instruction to the variable which it stores into
+         * @param[in] domTree self explanatory
+         * @param[in/out] VarUseStack a stack for each variable that represents what was last stored into it
+         * @param[out] ToDelete instructions that should later be deleted
+         * @param[in] OurPhiNodes set of our newly inserted phi nodes
+         *
+         */
         void renameVars(BasicBlock *BB, 
                         const std::unordered_set<AllocaInst *> &allVariables, 
-                        std::unordered_map<PHINode *, Value*> &PhiToVariableMapping, 
-                        Function &F, 
-                        DomTree &domTree,
+                        std::unordered_map<PHINode *, Value*> &PhiToVariableMapping,
+                        const DomTree &domTree,
                         std::unordered_map<Value *, std::stack<Value*>> &VarUseStack,
                         std::vector<Instruction*> &ToDelete,
-                        std::unordered_set<PHINode*> &OurPhiNodes)
+                        const std::unordered_set<PHINode*> &OurPhiNodes)
         {
             for(Instruction &InstRef : *BB){
                 Instruction *Inst = &InstRef;
@@ -186,10 +199,9 @@ namespace {
                     }
                 }
             }
-
             
             for(auto *Child: domTree.tree.getNode(BB)->children()){
-                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, F, domTree, VarUseStack, ToDelete, OurPhiNodes);
+                renameVars(Child->getBlock(), allVariables, PhiToVariableMapping, domTree, VarUseStack, ToDelete, OurPhiNodes);
             }
 
             for(Instruction &InstRef : *BB){
@@ -212,7 +224,8 @@ namespace {
             }
         }
 
-        bool runOnFunction(Function &F) override {
+        bool runOnFunction(Function &F) override
+        {
             std::unordered_set<AllocaInst *> allVariables;
             std::unordered_map<AllocaInst *, std::unordered_set<BasicBlock *>> blocksWithStores;
 
@@ -232,7 +245,7 @@ namespace {
             }
             std::vector<Instruction*> ToDelete;
 
-            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, F, domTree, VarUseStack, ToDelete, OurPhiNodes);
+            renameVars(&F.getEntryBlock(), allVariables, PhiToVariableMapping, domTree, VarUseStack, ToDelete, OurPhiNodes);
 
 
             for(Instruction* Inst:ToDelete){

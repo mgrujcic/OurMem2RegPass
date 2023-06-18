@@ -146,6 +146,8 @@ namespace {
         }
 
         /**
+         *  @brief Sets incoming values for phi instructions by keeping track of how the variables are used beforehand.
+         *         Also removes instructions that are no longer necessary.
          *
          * @param[in] BB basic block that is currently being iterated
          * @param[in] allVariables all alloca instructions
@@ -216,7 +218,7 @@ namespace {
                 }
                 else if(PHINode *phi = dyn_cast<PHINode>(Inst)){
                     //if the phi instruction was not added by this pass skip it
-                     if(OurPhiNodes.find(phi) == OurPhiNodes.end())
+                    if(OurPhiNodes.find(phi) == OurPhiNodes.end())
                         continue;
                     Value *val = PhiToVariableMapping[phi];
                     VarUseStack[val].pop();

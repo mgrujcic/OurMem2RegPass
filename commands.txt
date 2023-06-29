@@ -1,3 +1,3 @@
-./bin/clang -emit-llvm -S -fno-discard-value-names -Xclang -disable-O0-optnone -o ../test.ll ../llvm/lib/Transforms/OurMem2RegPass/test1.c
+./bin/clang -emit-llvm -S -fno-discard-value-names -Xclang -disable-O0-optnone -o ../test.ll ../llvm/lib/Transforms/OurMem2RegPass/tests/test1.c
 ./bin/opt -mem2reg -S -o ../goal.ll -enable-new-pm=0 ../test.ll
 ./bin/opt -load lib/LLVMOurMem2RegPass.so -ourmem2reg -S -debug -o ../testmem2reg.ll -enable-new-pm=0 ../test.ll 
